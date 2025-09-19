@@ -323,19 +323,28 @@ LUA_API int lua_isuserdata (lua_State *L, int idx) {
 }
 
 
-/* is at least one tag in [begin, end) empty? */
-static int anyemptytag(const lu_byte *begin, lua_Unsigned n) {
-  for (const lu_byte *p = begin; p != begin + n; p++) {
-    if (tagisempty(*p))
-      return 1;
-  }
-  return 0;
+/* is at least one tag in [p, p + n) empty? */
+static int anyemptytag(const lu_byte *p, lua_Unsigned n) {
+  return memchr(p, LUA_TNIL, n) != NULL;
 }
 
-/* are all tags in [begin, end) empty? */
-static int allemptytags(const lu_byte *begin, lua_Unsigned n) {
-  for (const lu_byte *p = begin; p != begin + n; p++) {
-    if (!tagisempty(*p))
+/* are all tags in [p, p + n) empty? */
+static int allemptytags(const lu_byte *p, lua_Unsigned n) {
+  /* there is still optimization potential (via loop unrolling, vectorization).
+  we'd want something like memrchr so we don't have to do that ourselves. */
+
+  static const lua_Unsigned NOVARIANT_MASK_REP = 0x0F0F0F0F0F0F0F0FULL;
+  _Static_assert(novariant(0xFF) == 0x0F, "novariant mask must be 0x0F");
+  _Static_assert(LUA_TNIL == 0, "nil tag must be 0");
+
+  for (lua_Unsigned i = 0; i + sizeof(lua_Unsigned) <= n; i += sizeof(lua_Unsigned)) {
+    const lua_Unsigned *u = cast(const lua_Unsigned*, p + i);
+    if ((*u & NOVARIANT_MASK_REP) != 0)  /* any non-nil tag in there? */
+      return 1;
+  }
+  /* now do the remaining */
+  for (lua_Unsigned i = n / sizeof(lua_Unsigned) * sizeof(lua_Unsigned); i < n; i++) {
+    if (!tagisempty(p[i]))
       return 0;
   }
   return 1;
