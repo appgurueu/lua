@@ -324,8 +324,8 @@ LUA_API int lua_isuserdata (lua_State *L, int idx) {
 
 
 /* is at least one tag in [begin, end) empty? */
-static int anyempty(const lu_byte *begin, const lu_byte *end) {
-  for (const lu_byte *p = begin; p != end; p++) {
+static int anyemptytag(const lu_byte *begin, lua_Unsigned n) {
+  for (const lu_byte *p = begin; p != begin + n; p++) {
     if (tagisempty(*p))
       return 1;
   }
@@ -333,8 +333,8 @@ static int anyempty(const lu_byte *begin, const lu_byte *end) {
 }
 
 /* are all tags in [begin, end) empty? */
-static int allempty(const lu_byte *begin, const lu_byte *end) {
-  for (const lu_byte *p = begin; p != end; p++) {
+static int allemptytags(const lu_byte *begin, lua_Unsigned n) {
+  for (const lu_byte *p = begin; p != begin + n; p++) {
     if (!tagisempty(*p))
       return 0;
   }
@@ -344,9 +344,9 @@ static int allempty(const lu_byte *begin, const lu_byte *end) {
 /* is t a sequence that lives entirely in the array part? */
 static int issequence_array(const Table *t, lua_Unsigned len) {
   const lu_byte *tags = getArrTag(t, 0);
-  if (anyempty(tags, tags + len))
+  if (anyemptytag(tags, len))
     return 0;  /* there is a hole in 1, ..., rawlen(t) */
-  if (len < t->asize && !allempty(tags + len, tags + t->asize))
+  if (!allemptytags(tags + len, t->asize - len))
     return 0;  /* there is an extra border after rawlen(t)+1 */
 
   /* therefore the hash part must be empty */
@@ -361,7 +361,7 @@ static int issequence_array(const Table *t, lua_Unsigned len) {
 /* is t a sequence that lives in both parts? */
 static int issequence_mixed(const Table *t, lua_Unsigned len) {
   const lu_byte *tags = getArrTag(t, 0);  /* bogus if t->asize == 0, but doesn't matter */
-  if (anyempty(tags, tags + t->asize))
+  if (anyemptytag(tags, t->asize))
     return 0;  /* there is a hole in 1, ..., asize */
 
   lua_Unsigned expected = len - t->asize;
