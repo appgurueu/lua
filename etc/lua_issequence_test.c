@@ -92,7 +92,7 @@ int main(void) {
   check(count_ints(L, t) == n);
   stop_timer("count_ints (traversal using lua_next)");
 
-  lua_pop(L, 1);  /* Take the returned value out of the stack */
+  lua_pop(L, 1);
   lua_close(L);
 
   return 0;
