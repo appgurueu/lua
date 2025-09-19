@@ -323,6 +323,77 @@ LUA_API int lua_isuserdata (lua_State *L, int idx) {
 }
 
 
+/* is at least one tag in [begin, end) empty? */
+static int anyempty(const lu_byte *begin, const lu_byte *end) {
+  for (const lu_byte *p = begin; p != end; p++) {
+    if (tagisempty(*p))
+      return 1;
+  }
+  return 0;
+}
+
+/* are all tags in [begin, end) empty? */
+static int allempty(const lu_byte *begin, const lu_byte *end) {
+  for (const lu_byte *p = begin; p != end; p++) {
+    if (!tagisempty(*p))
+      return 0;
+  }
+  return 1;
+}
+
+/* is t a sequence that lives entirely in the array part? */
+static int issequence_array(const Table *t, lua_Unsigned len) {
+  const lu_byte *tags = getArrTag(t, 0);
+  if (anyempty(tags, tags + len))
+    return 0;  /* there is a hole in 1, ..., rawlen(t) */
+  if (len < t->asize && !allempty(tags + len, tags + t->asize))
+    return 0;  /* there is an extra border after rawlen(t)+1 */
+
+  /* therefore the hash part must be empty */
+  for (lua_Unsigned i = 0; i < sizenode(t); i++) {
+    if (!isempty(gval(gnode(t, i))))  /* a non-empty entry? */
+      return 0;  /* extra key not belonging to the sequence */
+  }
+
+  return 1;
+}
+
+/* is t a sequence that lives in both parts? */
+static int issequence_mixed(const Table *t, lua_Unsigned len) {
+  const lu_byte *tags = getArrTag(t, 0);  /* bogus if t->asize == 0, but doesn't matter */
+  if (anyempty(tags, tags + t->asize))
+    return 0;  /* there is a hole in 1, ..., asize */
+
+  lua_Unsigned expected = len - t->asize;
+  const lua_Unsigned hsize = sizenode(t);
+  if (expected > hsize)
+    return 0;  /* not enough space in hash part (could keep checking during the loop?) */
+
+  for (lua_Unsigned i = 0; i < hsize; i++) {
+    if (!isempty(gval(gnode(t, i)))) {  /* a non-empty entry? */
+      if (expected == 0 || keytt(gnode(t, i)) != LUA_VNUMINT)
+        return 0;  /* extra key not belonging to the sequence */
+      lua_Integer k = keyval(gnode(t, i)).i;
+      if (k < 1 || k > cast(lua_Integer, len))
+        return 0;  /* key out of range */
+      expected--;
+    }
+  }
+
+  return 1;
+}
+
+LUA_API int lua_issequence (lua_State *L, int idx) {
+  const TValue *o = index2value(L, idx);
+  if (!ttistable(o)) return 0;
+  Table *t = hvalue(o);
+  const lua_Unsigned len = luaH_getn(L, t);
+  if (l_unlikely(len > t->asize))
+    return issequence_mixed(t, len);  /* if a sequence, part of it must live in the hash part */
+  return issequence_array(t, len);  /* if a sequence, it must live in the array part */
+}
+
+
 LUA_API int lua_rawequal (lua_State *L, int index1, int index2) {
   const TValue *o1 = index2value(L, index1);
   const TValue *o2 = index2value(L, index2);
